@@ -9,6 +9,10 @@ min_val <- sorted_pop[1]
 print(min_val == min(murders$population))
 print(min_val)
 
+max_val <- sorted_pop[length(sorted_pop)]
+print(max_val == max(murders$population))
+print(max_val)
+
 # 2
 pop <- murders$population
 ordered_pop <- order(pop)
@@ -28,7 +32,7 @@ city <- c("Beijing", "Lagos", "Paris", "Rio de Janeiro", "San Juan", "Toronto")
 city_temps <- data.frame(name = city, temperature = temp)
 
 ranks <-rank(murders$population)
-my_df <- data.frame(rank = ranks, state = murders$population)
+my_df <- data.frame(rank = ranks, population = murders$population)
 
 # ---
 
@@ -46,6 +50,7 @@ mean(na_example)
 
 ind <- is.na(na_example)
 print(sum(ind))
+# print(colSums(x))            # use colSums for vectors/matrices/etc. with >1 numeric (!) column
 
 # 3
 print(mean(na_example[!ind]))
