@@ -1,0 +1,1 @@
+maybe add `getwd()` to cheat sheet, quiet helpful :)
