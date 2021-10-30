@@ -1,2 +1,1 @@
-maybe add `getwd()` to cheat sheet, quiet helpful :)
-add `` (variable names) and "" '' (strings) to cheat sheet!
+
