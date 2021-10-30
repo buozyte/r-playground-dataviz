@@ -1,0 +1,6 @@
+# collection of helpful functions used in the exercises
+# may include in some Jupiter Notebook or create new Notebook later sometime :)
+
+set_order()
+uniqueN()
+colSums() and rowSums()
