@@ -120,7 +120,7 @@ possibly_better <- ggplot(data=boxplots_melted, aes(x=variable, y=value)) +
 
 # ---
 
-# section 7
+# section 07
 # 1
 mtcars_dt <- as.data.table(mtcars)
 boxplot_mtcars <- ggplot(data=mtcars_dt, aes(x=as.factor(cyl), y=mpg)) +
