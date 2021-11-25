@@ -148,9 +148,11 @@ dt[, where_wt:= as.factor((data.table::fcase(
 # alternative for ordering in aes:
 # dt[, mutants:=factor(mutants, levels=unique(dt[order(median), mutants]))]
 
-mutant_plot <- ggplot(dt, aes(color=where_wt)) +
-                geom_boxplot(aes(x=reorder(mutants, pro_uptake, na.rm = TRUE),
-                                  y=pro_uptake)) +
+mutant_plot <- ggplot(dt, aes(x=reorder(mutants, pro_uptake, na.rm = TRUE),
+                              y=pro_uptake,
+                              color=where_wt)) +
+                geom_boxplot() +
+                geom_jitter(width=0.4) + 
                 xlab("Mutant") +
                 ylab("Uptake (cpm)")
 
