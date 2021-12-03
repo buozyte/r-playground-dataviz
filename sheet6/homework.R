@@ -111,4 +111,3 @@ all_plots <- grid.arrange(age_survival, age_class, class_survival, all_together,
 #   to survive.
 # This is (an common or) an indirect cause (based on interpretation).
 # Possible relationships: age -> pclass -> survive, (age -> survived)
-
