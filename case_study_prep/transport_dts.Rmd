@@ -1,0 +1,203 @@
+---
+title: "Data Analysis"
+author: "Donata Buozyte"
+date: "19/12/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(gridExtra)
+library(GGally)
+library(lubridate)
+
+file_path <- file.path("/Users", "donatabuozyte", "Desktop", "Uni", "Master", "Datasets", "barcelona_data")
+
+filenames <- list.files(file_path, pattern="*.csv", full.names=TRUE)
+all_tables <- lapply(filenames, fread)
+
+accidents <- all_tables[[1]]
+air_quality <- all_tables[[2]]
+air_stations <- all_tables[[3]]
+births <- all_tables[[4]]
+bus_stops <- all_tables[[5]]
+deaths <- all_tables[[6]]
+immigrants_by_nat <- all_tables[[7]]
+immi_emi_by_age <- all_tables[[8]]
+immi_emi_by_dest <- all_tables[[9]]
+immi_emi_by_dest2 <- all_tables[[10]]
+immi_emi_by_sex <- all_tables[[11]]
+life_exp <- all_tables[[12]]
+freq_baby_names <- all_tables[[13]]
+freq_names <- all_tables[[14]]
+pop <- all_tables[[15]]
+transport <- all_tables[[16]]
+unemployment <- all_tables[[17]]
+
+transport_dts <- c(1, 5, 16)
+transport_dt_names <- c("accidents", "air_quality", "air_stations", "births", "bus_stops", "deaths", "immigrants_by_nat", "immi_emi_by_age", "immi_emi_by_dest", "immi_emi_by_dest2", "immi_emi_by_sex", "life_exp", "freq_baby_names", "freq_names", "pop", "transport", "unemployment")
+```
+
+## Transport Data Tables
+
+Summary and head of all data tables + renaming columns:
+
+```{r summary of dts}
+for (elem in transport_dts){
+  print(transport_dt_names[elem])
+  names(all_tables[[elem]]) <- gsub(" ", "_", tolower(names(all_tables[[elem]])))
+  print(head(all_tables[[elem]]))
+  cat("\n")
+  print(summary(all_tables[[elem]]))
+  cat("\n\n")
+}
+```
+```{r, echo=FALSE}
+names(all_tables[[2]]) <- gsub(" ", "_", tolower(names(all_tables[[2]])))
+
+names(all_tables[[3]]) <- gsub(" ", "_", tolower(names(all_tables[[3]])))
+
+accidents <- all_tables[[1]]
+air_quality <- all_tables[[2]]
+air_stations <- all_tables[[3]]
+bus_stops <- all_tables[[5]]
+transport <- all_tables[[16]]
+```
+
+## Accidents
+
+```{r prep accidents and explore injuries, fig.dim = c(8, 8)}
+accidents[, dates := as.Date(paste0(month, "/", day, "/2017"), "%B/%d/%Y")]
+# accidents[, district_name := as.factor(district_name)]
+accidents_injuries <- melt(accidents,
+                             measure.vars = c("mild_injuries", "serious_injuries"),
+                             value.name = "number_injuries",
+                             variable.name = "injury_type")
+
+ggplot(accidents_injuries, aes(x=number_injuries)) +
+  geom_histogram(bins=10) +
+  facet_wrap(~injury_type, ncol = 2, scales="free_x")
+```
+
+```{r explore injuries per part of the day, fig.dim = c(6,6)}
+ggplot(accidents_injuries, aes(x=number_injuries)) +
+  geom_histogram(bins=10) +
+  facet_wrap(~part_of_the_day+injury_type, ncol = 2, scales="free_x")
+```
+
+```{r explore injuries per district, fig.dim = c(8, 12)}
+ggplot(accidents_injuries, aes(x=number_injuries)) +
+  geom_histogram(bins=10) +
+  facet_wrap(~district_name+injury_type, ncol = 2, scales="free_x")
+```
+
+```{r explore injuries per weekday, fig.dim = c(8, 8)}
+ggplot(accidents_injuries, aes(x=number_injuries)) +
+  geom_histogram(bins=10) +
+  facet_wrap(~weekday+injury_type, ncol = 2, scales="free_x")
+```
+
+```{r explore injuries per day (hm), fig.dim = c(8, 6)}
+ggplot(accidents_injuries, aes(y=number_injuries, x=dates, color=injury_type)) +
+  geom_line() +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  scale_y_continuous(breaks=1:10)
+```
+
+```{r prep air_quality, echo=FALSE}
+# notes:
+# ## Air Quality
+# Problem: interpretation of `date_time`. Unit? Start?
+air_quality[, air_quality := as.factor(air_quality)]
+air_quality[, o3_hour := as.integer(gsub("h", "", o3_hour))]
+air_quality[, o3_quality := as.factor(o3_quality)]
+air_quality[, no2_hour := as.integer(gsub("h", "", no2_hour))]
+air_quality[, no2_quality := as.factor(no2_quality)]
+air_quality[, pm10_hour := as.integer(gsub("h", "", pm10_hour))]
+air_quality[, pm10_quality := as.factor(pm10_quality)]
+air_quality[, gen := dmy_hm(generated)]
+
+air_qualities <- melt(air_quality,
+                      measure.vars = c("o3_value", "no2_value", "pm10_value"),
+                      value.name = "qualities",
+                      variable.name = "measured_comp")
+```
+
+```{r explore air_quality per day, echo=FALSE}
+temp <- ggplot(air_qualities, aes(y=qualities, x=gen, color=measured_comp)) +
+  geom_line(size=0.2)
+```
+
+## Bus Stops, Transport
+
+```{r bus stops dt}
+bus_stops[, .N, by=transport]
+bus_stops[, bus_prefix := strsplit(bus.stop, " ")[[1]][1], by=bus.stop]
+bus_stops[, bus_per_station := strsplit(bus.stop, " ")[[1]][2], by=bus.stop]
+bus_stops[, .(code, bus_prefix, transport)] %>% distinct()
+
+bus_stops_per_bus <- as.data.table(separate_rows(bus_stops, 9, sep = "-"))[bus_per_station != ""]
+bus_stops_per_bus[, c("bus.stop"):=NULL]
+
+head(bus_stops_per_bus)
+summary(bus_stops_per_bus)
+```
+
+```{r transport dt}
+transport[, .N, by=transport]
+transport[, .N, by=code]
+```
+
+## Explore districts
+
+```{r}
+accidents[, victims_per_district:=sum(victims), by=district_name]
+districts <- accidents[order(victims_per_district), unique(district_name)]
+for (dist in districts){
+  print(dist)
+  print(paste0("Number of victims in total: ", accidents[district_name == dist, unique(victims_per_district)]))
+  print(paste0("Number of victims with mild injuries: ", accidents[district_name == dist, sum(mild_injuries)]))
+  print(paste0("Number of victims with serious injuries: ", accidents[district_name == dist, sum(serious_injuries)]))
+  cat("\n")
+  total_trans <- transport[district.name == dist, uniqueN(station), by=transport][, sum(V1)]
+  print(paste0("Total different station-transport combinations: ", total_trans))
+  print(transport[district.name == dist, uniqueN(station), by=transport])
+  cat("\n")
+  total_bus <- bus_stops_per_bus[district.name == dist, uniqueN(bus_per_station), by=transport][, sum(V1)]
+  print(paste0("Total different busses: ", total_bus))
+  print(bus_stops_per_bus[district.name == dist, uniqueN(bus_per_station), by=transport])
+  cat("\n")
+  print(paste0("Total of busses and station-transport combinations: ", total_bus + total_trans))
+  cat("\n\n")
+}
+```
+
+Conclusion: Total number of victims tends to be higher for increasing number of busses and transport opportunities per district.
+
+But: could be both realted to district size.
+```{r air data tables}
+air_general <- merge(air_quality,
+                     air_stations,
+                     by="station",
+                     all.x = TRUE)[, c("air_quality", "district_name")][, value := 1]
+air_gen <- dcast(air_general,
+                 ... ~ air_quality,
+                 value.var = "value")
+
+air_gen
+```
+
+Outlier: district 2 is interesting :)
+
+```{r, echo=FALSE}
+n_and_d <- accidents[, c("neighborhood_name", "district_name")] %>% distinct()
+```
+

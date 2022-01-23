@@ -1,0 +1,251 @@
+---
+title: 'Case study: immigration and accidents in Barcelona'
+author: "C. H., Donata Buozyte, J. K., M. S."
+date: "23/01/2022"
+output:
+  pdf_document: default
+  html_document: default
+header-includes:
+ \usepackage{float}
+ \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(gridExtra)
+library(lubridate)
+library(RColorBrewer)
+library(cowplot)
+
+# change file_path to execute code
+# file path should lead to the directory where all barcelona data files are stored
+file_path <- file.path("_insert_file_path_here_")
+
+# example for a file path (here: absolute path)
+# file_path <- file.path("/Users", "donatabuozyte", "Desktop", "Uni", "Master", "Datasets", "barcelona_data")
+
+filenames <- list.files(file_path, pattern="*.csv", full.names=TRUE)
+all_tables <- lapply(filenames, fread)
+```
+
+## Motivation
+
+In 2017 there were about 190 thousand new car registrations in Barcelona.^[https://www.catalannews.com/business/item/number-of-new-cars-registered-up-7-in-2017]. Considering this, it is not suprising that the number of victims in accidents was at about 12 thousand with a total of 241 serious injuries. The number of victims in the central district Eixample is especially high compared to the other districts.
+
+On the other hand, Eixample seems to be a popular district among immigrants from all over the world, as more than 50 thousand people decided to settle there.
+
+Considering these two observations, one might conclude that the number of immigrants could be a reason why the amount of accidents and injuries is significantly higher than in other districts.
+
+
+## Data Preparation 
+
+In the data analysis, the two data tables regarding the accidents in 2017 and regarding the immigrants by nationality from the Barcelona data table are used. An additional data table with the population density per district is defined.^[https://en.wikipedia.org/wiki/Districts_of_Barcelona]
+
+The accidents data table is melted to create columns with the type of injury and the number of injuries of that type per accident. Further new columns include the sum of injuries (per type and in total) per district, the sum of injuries in Eixample and non-Eixample districts, and their ratio in percentages.
+
+The immigrants per nationality data table is prepared in a similar way and includes the same additional columns but with the sums of the number of immigrants.
+
+Lastly, all previously prepared data tables are merged to enable the analysis of the relationships between the number of injuries and the number of immigrants.
+
+```{r clean up column names in every data table, include=FALSE}
+for (elem in 1:17){
+  names(all_tables[[elem]]) <- gsub(" ", "_", tolower(names(all_tables[[elem]])))
+  names(all_tables[[elem]]) <- gsub("\\.", "_", tolower(names(all_tables[[elem]])))
+}
+
+accidents <- all_tables[[1]]
+air_quality <- all_tables[[2]]
+air_stations <- all_tables[[3]]
+births <- all_tables[[4]]
+bus_stops <- all_tables[[5]]
+deaths <- all_tables[[6]]
+immigrants_by_nat <- all_tables[[7]]
+immi_emi_by_age <- all_tables[[8]]
+immi_emi_by_dest <- all_tables[[9]]
+immi_emi_by_dest2 <- all_tables[[10]]
+immi_emi_by_sex <- all_tables[[11]]
+life_exp <- all_tables[[12]]
+freq_baby_names <- all_tables[[13]]
+freq_names <- all_tables[[14]]
+pop <- all_tables[[15]]
+transport <- all_tables[[16]]
+unemployment <- all_tables[[17]]
+
+dt_names <- c("accidents", "air_quality", "air_stations", "births", "bus_stops", "deaths", "immigrants_by_nat", "immi_emi_by_age", "immi_emi_by_dest", "immi_emi_by_dest2", "immi_emi_by_sex", "life_exp", "freq_baby_names", "freq_names", "pop", "transport", "unemployment")
+```
+
+```{r create a date column consisting of the day, month and year, include=FALSE}
+accidents[, dates := as.Date(paste0(month, "/", day, "/2017"), "%B/%d/%Y")]
+```
+
+```{r create new data frame with new column consisting of the injury types, include=FALSE}
+accidents_injuries <- melt(accidents,
+                             measure.vars = c("mild_injuries", "serious_injuries"),
+                             value.name = "number_injuries",
+                             variable.name = "injury_type")
+```
+
+```{r add sum of injuries per district (and type) to dt, include=FALSE}
+accidents_injuries[, total_injuries_per_inj := sum(number_injuries), by = .(injury_type, district_name)]
+accidents_injuries[, total_injuries_per_dist := sum(number_injuries), by = district_name]
+```
+
+```{r add bool for Eixample/Non-Eixample + according sum of injuries, include=FALSE}
+accidents_injuries[, dist_eix := (district_name == "Eixample")]
+accidents_injuries[, total_injuries_per_eix := sum(number_injuries), by = dist_eix]
+```
+
+```{r add percentages for injuries in Eixample compared to the rest, include=FALSE}
+prep_acc_inj <- distinct(accidents_injuries[, .(total_injuries_per_eix, dist_eix)])
+total_inj <- sum(prep_acc_inj$total_injuries_per_eix)
+prep_acc_inj[, pct := (total_injuries_per_eix/total_inj)]
+```
+
+```{r similar preparation as for the accidents data table, include=FALSE}
+# compute sum
+immi_per_dist <- immigrants_by_nat[, sum(number), by = .(district_name)]
+
+# distinguish between Eixample and non-Eixample
+immi_per_dist[, dist_eix := (district_name == "Eixample")]
+immi_per_dist[, total_immi_per_eix := sum(V1), by = dist_eix]
+
+# compute ratio of sums in Eixample and non-Eixample
+prep_immi_dist <- distinct(immi_per_dist[, .(total_immi_per_eix, dist_eix)])
+total_immi <- sum(prep_immi_dist$total_immi_per_eix)
+prep_immi_dist[, pct := (total_immi_per_eix/total_immi)]
+```
+
+```{r merge the immigrants table and the accidents table, include=FALSE}
+immi_and_accidents <- merge(accidents_injuries, immi_per_dist, by = "district_name", all = FALSE)
+setnames(immi_and_accidents, "V1", "immigrants")
+```
+
+```{r add population density intervals to data table, include=FALSE}
+pop_density <- data.table(
+  district_name = immi_and_accidents[, unique(district_name)],
+  density = c(20, 35, 25, 10, 10, 20, 20, 20, 5, 5)
+)
+
+immi_and_accidents <- merge(immi_and_accidents, pop_density, by = "district_name", all.x = TRUE)
+```
+
+```{r actual population densities (not used in analysis but interesting), include=FALSE}
+data.table(district_name = immi_and_accidents[, unique(district_name)], density = c(24.786, 35.586, 28.66, 14.217, 13.584, 20.52, 21.737, 20.466, 8.321, 6.992))
+```
+
+```{r set-up of color scheme, include=FALSE}
+new_cols <- append(brewer.pal(9, "Blues"), brewer.pal(9, "Set1")[c(1,9)])
+all_dist <- unique(accidents$district_name)
+normal_dist <- all_dist[c(-4,-1)]
+all_dist<- append(normal_dist[order(normal_dist)], all_dist[c(4,1)])
+names(new_cols) <- all_dist
+new_cols <- new_cols[order(names(new_cols))]
+```
+
+
+
+## Data Analysis
+
+The following visualizations in Figure \ref{fig:plot-accidents} show the aforementioned spike of vehicle accidents and also the injuries due to these accidents in the disctrict Eixample. Compared to all the other districts, about $30\%$ of all injuries happened in Eixample and especially the amount of mild injuries is significantly higher than in other disctricts.
+
+```{r explore injuries per district, echo=FALSE, warning = FALSE, message = FALSE, fig.dim = c(10, 7), fig.cap = "Bar plots displaying the ratio of injuries in Eixample compared to other districts, the number of accidents per district, and the number of injuries per district.\\label{fig:plot-accidents}"}
+knitr::opts_chunk$set(fig.pos = 'H')
+
+inj_per_dist <- ggplot(accidents_injuries) +
+  geom_bar(position="dodge", stat="identity", aes(y=total_injuries_per_inj, x=district_name, fill=district_name)) +
+  scale_fill_manual(name = "District Name", values = new_cols) +
+  facet_wrap(~injury_type, scales="free_y", labeller = as_labeller(c(`mild_injuries` = "Mild injuries", `serious_injuries` = "Serious injuries"))) +
+  labs(y="Number of injuries", x="District", title="Number of injuries per district") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
+
+inj_per_eix <- ggplot(prep_acc_inj, aes(y=total_injuries_per_eix, x=dist_eix, label = scales::percent(pct))) +
+  geom_bar(position="dodge", stat="identity", fill='#999999', width=0.6) +
+  labs(y="Number of injuries", x="", title="Number of injuries in Eixample") +
+  scale_x_discrete(labels=c("FALSE" = "Non-Eixample districts", "TRUE" = "Eixample")) +
+   geom_text(position = position_dodge(width = .9), vjust = 1.5, size = 5)
+
+acc_per_dist <- ggplot(accidents, aes(x=district_name, fill=district_name)) +
+  geom_histogram(stat="count")  +
+  scale_fill_manual(name = "District Name", values = new_cols) +
+  labs(y="Number of accidents", x="District", title="Number of accidents per district", fill="District Name") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
+
+plots <- align_plots(inj_per_dist, inj_per_eix + theme(legend.position="none"), align = 'v', axis = 'l')
+top_row <- plot_grid(plots[[2]], acc_per_dist + theme(legend.position="none"))
+
+plot_grid(top_row, plots[[1]], ncol = 1)
+```
+
+The bar plots in Figure \ref{fig:plot-immi} display the observation that comparatively more immigrants decide to settle in Eixample than in any other district. A comparison with the plots in Figure \ref{fig:plot-accidents} concludes, that districts with a high number of accidents and injuries tend to also have a high number of immigrants, while districts with a low number of immigrants tend to have less accidents and less injuries in total.
+
+```{r explore immigrants per district, echo=FALSE, warning = FALSE, message = FALSE, fig.dim = c(10, 3), fig.cap = "Bar plots displaying the ratio between immigrants settling in Eixample compared to all other districts as well as comparing each district individually.\\label{fig:plot-immi}"}
+knitr::opts_chunk$set(fig.pos = 'H')
+
+immi_per_eix <- ggplot(prep_immi_dist, aes(y=total_immi_per_eix, x=dist_eix, label = scales::percent(pct))) +
+  geom_bar(position="dodge", stat="identity", fill='#999999', width=0.6) +
+  labs(y="Number of immigrants", x="", title="Number of immigrants in Eixample") +
+  scale_x_discrete(labels=c("FALSE" = "Non-Eixample districts", "TRUE" = "Eixample")) +
+   geom_text(position = position_dodge(width = .9), vjust = 1.5, size = 5)
+
+immi_per_dist_p <- ggplot(immi_per_dist[V1 > 50]) +
+  geom_bar(position="dodge", stat="identity", aes(y=V1, x=district_name, fill=district_name)) +
+  scale_fill_manual(name = "District Name", values = new_cols) +
+  labs(y="Number of immigrants", x="District", title="Number of immigrants per district") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
+
+grid.arrange(immi_per_eix, immi_per_dist_p, ncol=2)
+```
+
+Comparing the number of immigrants and the number of injuries per district as shown in Figure \ref{fig:plot-relationship}, one could conlude that they are somehow related. This assumption can be further inspected using the Spearman rank correlation test, as the actual distribution of the data is unknown and likely not Gaussian. The Spearman test is also robust to outliers such as the district Eixample. In this case, the correlation between the number of immigrants and the number of injuries with the null hypothesis that they are not correlated is tested. As the p-value is sufficiently small, this hypothesis is rejected, which implies that they are correlated and supports therefore the aforementioned assumption.^[Remark: it should be noted that the number of available data points is quite low, which heavily influences the plot, the regression line, the Spearman test and therefore the conclusions.]
+
+```{r relation between injuries and immigration, echo=FALSE, warning = FALSE, message = FALSE, fig.dim = c(5, 5), fig.cap = "Scatter plot displaying the relation between the number of immigrants and the number of injuries with a regression line showing the positive correlation between the axes.\\label{fig:plot-relationship}"}
+knitr::opts_chunk$set(fig.pos = 'H')
+
+ggplot(immi_and_accidents, aes(y=total_injuries_per_dist, x=immigrants)) +
+  geom_point(size=3, aes(color=district_name, fill=district_name), shape=21, color="black") +
+  stat_smooth(method = "lm", color="grey30") +
+  scale_fill_manual(name = "District Name", values = new_cols) +
+  labs(x="Number of immigrants", y="Number of injuries", title="Relation between immigration and injuries", subtitle.="with a regression line")
+
+```
+```{r spearman test, echo=FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(fig.pos = 'H')
+
+immi_and_accidents[, cor.test(immigrants, total_injuries_per_dist, method="spearman")]
+```
+
+Although the Spearman test is robust to outliers, it is useful to perform it without the district Eixample, as it could be interpreted as a significant outlier in the original plot in Figure \ref{fig:plot-relationship}.
+
+After performing second test as shown below, the value $\rho$ is about half of the original value, which indicates that the possible outlier has a huge influence on the Spearman test. Nevertheless, the p-value is significantly low and hence the null hypothesis is still rejected.
+
+```{r spearman test without Eixample, echo=FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(fig.pos = 'H')
+
+immi_and_accidents[district_name != "Eixample", cor.test(immigrants, total_injuries_per_dist, method="spearman")]
+```
+
+However, since Eixample is the central district of Barcelona, it is obvious that it also has the highest population among all districts with about $266$ thousand residents. The population density (measured in thousand residents per $\mathrm{km}^{2}$) in this district is $35.7$, and therefore the highest among all districts in Barcelona, as its size is only $7.46\,\mathrm{km}^{2}$. In comparison, the population of Sants-Montjuïc is about $182$ thousand, while its size is $21.35\,\mathrm{km}^{2}$, hence its population density is only about $8.5$.^[https://en.wikipedia.org/wiki/Districts_of_Barcelona]
+
+The following visualization in Figure \ref{fig:plot-per-dist} shows that for similar population densities the number of injuries stays nearly the same despite varying numbers of immigrants, with the only slight exception being Sant Martí. This could be due to its three beaches, which are popular among locals and tourists, or the high amount of factories, which both usually cause more traffic in the corresponding areas.^[https://www.barcelona-journal.de/reisetipps/die-stadt/sant-marti.html, https://de.wikipedia.org/wiki/Sant_Mart%C3%AD_(Barcelona)]
+
+```{r facet by the plot before by the density, echo=FALSE, fig.cap = "Scatter plot displaying the relation between the number of immigrants and the number of injuries faceted by the population density of the districts.\\label{fig:plot-per-dist}"}
+knitr::opts_chunk$set(fig.pos = 'H')
+
+ggplot(immi_and_accidents, aes(y=total_injuries_per_dist, x=immigrants)) +
+  geom_point(size=3, aes(color=district_name, fill=district_name), shape=21, color="black") +
+  scale_x_continuous(n.breaks=3) +
+  facet_wrap(~density, labeller = as_labeller(c(`5` = "5-10 thousand", `10` = "10-15 thousand", `20` = "20-25 thousand", `25` = "25-30 thousand", `35` = "35-40 thousand"))) +
+  scale_fill_manual(name = "District Name", values = new_cols) +
+  labs(x="Number of immigrants", y="Number of injuries", title="Relation between immigration and injuries per population density")
+```
+
+
+## Conclusion
+
+Based on the analysis we can conlude that there is a certain relationship between the amount of injuries due to accidents and the number of immigrants in a district, but this relationship is due to the population density per district. Hence although they are related, more immigration does not cause a higher amount of injuries in accidents. However, Figure \ref{fig:plot-per-dist} also shows that the population density does not directly cause the high number of injuries, as districts with a really low population density can have significantly more injuries than others. The actual relationship between those two factors will not be further analysed here, but could for example be related to the position of the district or the housing options, attractions, parks, etc. in the district.
